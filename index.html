@@ -1,64 +1,207 @@
-<!DOCTYPE html>
-<html lang="en">
+ <!DOCTYPE html>
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Example</title>
-<style>
-  body { margin: 0; overflow: hidden; }
-</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detailed 3D Earth</title>
+  <style>
+    /* Set body background to black and remove default margins/scrollbars. 
+      touch-action: none prevents common mobile scrolling issues while dragging the Earth.
+    */
+    body { margin: 0; overflow: hidden; touch-action: none; background: #000; }
+  </style>
 </head>
 <body>
 
-<!-- THREE.JS CDN -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
-// Create scene
-const scene = new THREE.Scene();
+window.onload = () => {
 
-// Camera
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
-camera.position.z = 5;
+  // --- Configuration ---
+  const EARTH_RADIUS = 1.2;
+  const ROTATION_SPEED = 0.0008; // Earth's constant slow rotation
+  const DRAG_SENSITIVITY = 0.01;
+  const ZOOM_MIN = 1.5;
+  const ZOOM_MAX = 10;
 
-// Renderer
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+  // --- Scene Setup ---
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.z = 3;
 
-// Create a 3D cube
-const geometry = new THREE.BoxGeometry(1, 1, 1);
-const material = new THREE.MeshNormalMaterial();
-const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
-
-// Controls (touch / drag rotation)
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-
-// Animation loop
-function animate() {
-  requestAnimationFrame(animate);
-
-  cube.rotation.x += 0.01;
-  cube.rotation.y += 0.01;
-
-  controls.update();
-  renderer.render(scene, camera);
-}
-animate();
-
-// Resize handling
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-});
+  renderer.setPixelRatio(window.devicePixelRatio);
+  document.body.appendChild(renderer.domElement);
+
+  // --- Texture Loading ---
+  const textureLoader = new THREE.TextureLoader();
+
+  // High-resolution Earth Day Map
+  const mapTexture = textureLoader.load('https://raw.githubusercontent.com/spck/assets/main/textures/earth/map-day.jpg');
+  
+  // Earth Bump/Normal Map for mountains/details
+  const bumpTexture = textureLoader.load('https://raw.githubusercontent.com/spck/assets/main/textures/earth/bump.jpg');
+
+  // Specular Map for water reflection (shininess)
+  const specularTexture = textureLoader.load('https://raw.githubusercontent.com/spck/assets/main/textures/earth/specular.jpg');
+
+  // --- Earth Mesh ---
+  const geometry = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+  const earthMaterial = new THREE.MeshPhongMaterial({ 
+    map: mapTexture,
+    bumpMap: bumpTexture,
+    bumpScale: 0.05, // Adjust detail depth
+    specularMap: specularTexture,
+    specular: new THREE.Color('grey'), // Color of specular highlights
+    shininess: 10,
+  });
+  const earth = new THREE.Mesh(geometry, earthMaterial);
+  scene.add(earth);
+  
+  // --- Atmosphere/Glow Effect (Subtle) ---
+  // Create a sphere slightly larger than the Earth for the glow
+  const glowGeometry = new THREE.SphereGeometry(EARTH_RADIUS * 1.05, 64, 64);
+  const glowMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      'c': { type: 'f', value: 0.1 },
+      'p': { type: 'f', value: 2.0 },
+      'glowColor': { type: 'c', value: new THREE.Color(0x0099ff) }
+    },
+    vertexShader: `
+      uniform float c;
+      uniform float p;
+      varying float intensity;
+      void main() 
+      {
+        vec3 vNormal = normalize( normalMatrix * normal );
+        vec3 vPosition = normalize( modelViewMatrix * vec4( position, 1.0 ) ).xyz;
+        intensity = pow( c - dot(vNormal, vPosition), p );
+        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 glowColor;
+      varying float intensity;
+      void main() 
+      {
+        vec3 glow = glowColor * intensity;
+        gl_FragColor = vec4( glow, 1.0 );
+      }
+    `,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true
+  });
+  const atmosphere = new THREE.Mesh(glowGeometry, glowMaterial);
+  scene.add(atmosphere);
+  
+  // Wireframe is now optional but often good for debugging/effect
+  const wireframe = new THREE.LineSegments(
+    new THREE.WireframeGeometry(geometry),
+    new THREE.LineBasicMaterial({ color: 0x00ffff, opacity: 0.1, transparent: true })
+  );
+  scene.add(wireframe);
+
+  // --- Lighting ---
+  // Ambient light to illuminate the whole scene
+  scene.add(new THREE.AmbientLight(0x333333));
+  
+  // Directional Light to simulate the sun
+  const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  sunLight.position.set(5, 3, 5);
+  scene.add(sunLight);
+
+  // --- Controls (Keep existing logic) ---
+  
+  // Rotation state
+  let isDragging = false, prevX = 0, prevY = 0;
+
+  function startDrag(x, y) { isDragging = true; prevX = x; prevY = y; }
+  function drag(x, y) {
+    if (!isDragging) return;
+    const dx = x - prevX, dy = y - prevY;
+    // Rotate Earth and its atmosphere
+    earth.rotation.y += dx * DRAG_SENSITIVITY;
+    earth.rotation.x += dy * DRAG_SENSITIVITY;
+    atmosphere.rotation.copy(earth.rotation);
+    wireframe.rotation.copy(earth.rotation);
+    prevX = x; prevY = y;
+  }
+  function endDrag() { isDragging = false; }
+
+  // Mouse events
+  document.addEventListener("mousedown", e => startDrag(e.clientX, e.clientY));
+  document.addEventListener("mousemove", e => drag(e.clientX, e.clientY));
+  document.addEventListener("mouseup", endDrag);
+
+  // Touch/Pinch events
+  let initialPinchDistance = null;
+  document.addEventListener("touchstart", e => {
+    if (e.touches.length === 1) {
+      startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      initialPinchDistance = Math.sqrt(dx*dx + dy*dy);
+    }
+  }, { passive: false });
+
+  document.addEventListener("touchmove", e => {
+    if (e.touches.length === 1) {
+      drag(e.touches[0].clientX, e.touches[0].clientY);
+    } else if (e.touches.length === 2 && initialPinchDistance !== null) {
+      // Pinch zoom logic
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const pinchDistance = Math.sqrt(dx*dx + dy*dy);
+      // Determine delta, adjust sensitivity
+      const delta = (initialPinchDistance - pinchDistance) * 0.015;
+      camera.position.z += delta;
+      camera.position.z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, camera.position.z));
+      initialPinchDistance = pinchDistance;
+    }
+  }, { passive: false }); // Use passive: false to prevent default touch actions
+
+  document.addEventListener("touchend", e => {
+    if (e.touches.length < 2) initialPinchDistance = null;
+    endDrag();
+  });
+
+  // Mouse wheel zoom
+  document.addEventListener("wheel", e => {
+    camera.position.z += e.deltaY * 0.01;
+    camera.position.z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, camera.position.z));
+  });
+
+  // --- Animation Loop ---
+  function animate() {
+    requestAnimationFrame(animate);
+    
+    // Constant slow rotation of the Earth
+    earth.rotation.y += ROTATION_SPEED; 
+    atmosphere.rotation.copy(earth.rotation);
+    wireframe.rotation.copy(earth.rotation);
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // --- Resize Handler ---
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+};// --- BEFORE (External URLs) ---
+// const mapTexture = textureLoader.load('https://raw.githubusercontent.com/spck/assets/main/textures/earth/map-day.jpg');
+
+// --- AFTER (Local Files) ---
+// Assuming you created a folder named 'assets' and uploaded the files there
+const mapTexture = textureLoader.load('assets/map-day.jpg'); 
+const bumpTexture = textureLoader.load('assets/bump.jpg');
+const specularTexture = textureLoader.load('assets/specular.jpg'); 
+
 </script>
 
 </body>
