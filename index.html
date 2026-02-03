@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MECH-COMMAND: ANUBIS DIGITAL</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: monospace; color: #00ff9d; }
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        /* Clean HUD */
+        #hud { position: absolute; top: 20px; left: 20px; z-index: 100; pointer-events: none; }
+        .hp-bar { width: 200px; height: 10px; border: 1px solid #00ff9d; background: rgba(0,0,0,0.5); margin-bottom: 10px; }
+        #hp-fill { width: 100%; height: 100%; background: #00ff9d; transition: 0.3s; }
+        #log { position: absolute; top: 20px; right: 20px; text-align: right; font-size: 10px; width: 200px; }
+
+        /* Clean Controls */
+        #controls { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: space-between; padding: 0 40px; }
+        .btn-group { display: flex; flex-direction: column; gap: 10px; }
+        button { 
+            width: 80px; height: 50px; background: rgba(0,255,157,0.1); border: 2px solid #00ff9d; 
+            color: #00ff9d; border-radius: 10px; font-weight: bold; cursor: pointer;
+        }
+        button:active { background: #00ff9d; color: #000; }
+        .spawn-btn { border-color: #00ccff; color: #00ccff; width: 170px; }
+        .atk-btn { border-color: #ff3300; color: #ff3300; }
+    </style>
+</head>
+<body>
+
+    <div id="hud">
+        OPERATOR_INTEGRITY
+        <div class="hp-bar"><div id="hp-fill"></div></div>
+        <div id="target-ui" style="display:none">
+            TARGET_INTEGRITY
+            <div class="hp-bar" style="border-color:#ff3300"><div id="enemy-hp-fill" style="background:#ff3300; width:100%"></div></div>
+        </div>
+    </div>
+
+    <div id="log">SYSTEM ONLINE...</div>
+    <canvas id="game-canvas"></canvas>
+
+    <div id="controls">
+        <div class="btn-group">
+            <div style="display:flex; gap:10px">
+                <button onpointerdown="move(0.12, 'Run')" onpointerup="move(0, 'Idle')">RUN</button>
+                <button onpointerdown="move(0.05, 'Walk')" onpointerup="move(0, 'Idle')">WALK</button>
+            </div>
+            <div style="display:flex; gap:10px">
+                <button onpointerdown="turn(0.03)" onpointerup="turn(0)">LEFT</button>
+                <button onpointerdown="turn(-0.03)" onpointerup="turn(0)">RIGHT</button>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="spawn-btn" onclick="spawnEnemy()">SPAWN WISE ENEMY</button>
+            <div style="display:flex; gap:10px">
+                <button class="atk-btn" onclick="playerAttack()">PUNCH</button>
+                <button onclick="playerRoll()">ROLL</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, clock, player, mixer;
+        let playerActions = {};
+        let enemies = [];
+        let moveSpeed = 0, turnSpeed = 0;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000000, 10, 50);
+            clock = new THREE.Clock();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000);
+
+            const light = new THREE.DirectionalLight(0x00ff9d, 1);
+            light.position.set(5, 10, 5);
+            scene.add(light, new THREE.AmbientLight(0xffffff, 0.3));
+
+            // Grid
+            const grid = new THREE.GridHelper(200, 100, 0x00ff9d, 0x111111);
+            scene.add(grid);
+
+            // Load Player
+            const loader = new THREE.GLTFLoader();
+            loader.load('Character Animated.glb', (gltf) => {
+                player = gltf.scene;
+                player.scale.set(4, 4, 4);
+                scene.add(player);
+                mixer = new THREE.AnimationMixer(player);
+                gltf.animations.forEach(anim => playerActions[anim.name] = mixer.clipAction(anim));
+                playerActions['Idle'].play();
+            });
+
+            animate();
+        }
+
+        function spawnEnemy() {
+            const loader = new THREE.GLTFLoader();
+            loader.load('Character Animated.glb', (gltf) => {
+                const eObj = gltf.scene;
+                eObj.scale.set(4, 4, 4);
+                eObj.position.set(Math.random()*10-5, 0, -15);
+                
+                // Red Tint for Enemy
+                eObj.traverse(n => { if(n.isMesh) n.material = new THREE.MeshStandardMaterial({color: 0xff3300}) });
+                scene.add(eObj);
+
+                const eMixer = new THREE.AnimationMixer(eObj);
+                const eActions = {};
+                gltf.animations.forEach(anim => eActions[anim.name] = eMixer.clipAction(anim));
+                eActions['Idle'].play();
+
+                enemies.push({
+                    obj: eObj,
+                    mixer: eMixer,
+                    actions: eActions,
+                    hp: 100,
+                    state: 'chase'
+                });
+                
+                document.getElementById('target-ui').style.display = 'block';
+                document.getElementById('log').innerHTML = "TARGET DETECTED";
+            });
+        }
+
+        function move(s, anim) { 
+            moveSpeed = s; 
+            if(player) {
+                Object.values(playerActions).forEach(a => a.fadeOut(0.2));
+                playerActions[anim].reset().fadeIn(0.2).play();
+            }
+        }
+
+        function turn(s) { turnSpeed = s; }
+
+        function playerAttack() {
+            if(!player) return;
+            playerActions['Punch'].reset().play();
+            enemies.forEach(e => {
+                if(e.obj.position.distanceTo(player.position) < 4) {
+                    e.hp -= 25;
+                    document.getElementById('enemy-hp-fill').style.width = e.hp + "%";
+                    if(e.hp <= 0) e.state = 'dead';
+                }
+            });
+        }
+
+        function playerRoll() {
+            playerActions['Roll'].reset().play();
+            player.translateZ(5);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if(mixer) mixer.update(delta);
+
+            if(player) {
+                player.translateZ(moveSpeed);
+                player.rotation.y += turnSpeed;
+                
+                // Camera
+                const camPos = new THREE.Vector3(0, 8, 15).applyQuaternion(player.quaternion);
+                camera.position.copy(player.position).add(camPos);
+                camera.lookAt(player.position);
+            }
+
+            // Wise AI Logic
+            enemies.forEach((e, index) => {
+                e.mixer.update(delta);
+                if(e.state === 'dead') {
+                    e.actions['Death'].play();
+                    setTimeout(() => { scene.remove(e.obj); enemies.splice(index, 1); }, 2000);
+                    return;
+                }
+
+                const dist = e.obj.position.distanceTo(player.position);
+                if(dist > 3) {
+                    e.obj.lookAt(player.position);
+                    e.obj.translateZ(0.04);
+                    e.actions['Walk'].play();
+                } else {
+                    e.obj.lookAt(player.position);
+                    e.actions['Punch'].play();
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
