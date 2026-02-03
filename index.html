@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Hazmat Character Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e6e6e6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            padding: 1.5rem;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            margin-bottom: 0.5rem;
+            color: #4fc3f7;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+        }
+        
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.8;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .container {
+            display: flex;
+            flex: 1;
+            padding: 1.5rem;
+            gap: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .viewer-container {
+            flex: 3;
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            background: #0d1525;
+            min-height: 500px;
+        }
+        
+        #viewer {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(13, 21, 37, 0.9);
+            z-index: 10;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(79, 195, 247, 0.3);
+            border-top: 5px solid #4fc3f7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .controls-panel {
+            flex: 1;
+            background: rgba(30, 40, 60, 0.7);
+            border-radius: 8px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            min-width: 250px;
+            max-width: 350px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+        
+        h2 {
+            font-size: 1.3rem;
+            color: #4fc3f7;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        button {
+            background: rgba(79, 195, 247, 0.2);
+            color: #e6e6e6;
+            border: 1px solid rgba(79, 195, 247, 0.4);
+            border-radius: 4px;
+            padding: 0.6rem 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            flex: 1;
+            min-width: 100px;
+        }
+        
+        button:hover {
+            background: rgba(79, 195, 247, 0.4);
+            transform: translateY(-2px);
+        }
+        
+        button.active {
+            background: rgba(79, 195, 247, 0.6);
+            box-shadow: 0 0 10px rgba(79, 195, 247, 0.5);
+        }
+        
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #4fc3f7;
+            cursor: pointer;
+        }
+        
+        .info-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .info-panel h3 {
+            color: #4fc3f7;
+            margin-bottom: 0.5rem;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 1rem;
+            margin-top: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .controls-panel {
+                max-width: 100%;
+            }
+            
+            .viewer-container {
+                min-height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>3D Hazmat Character Viewer</h1>
+        <p class="subtitle">Interactive 3D model viewer with rotation, zoom, and animation controls. Drag to rotate, scroll to zoom.</p>
+    </header>
+    
+    <div class="container">
+        <div class="viewer-container">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Loading 3D model...</p>
+            </div>
+            <canvas id="viewer"></canvas>
+        </div>
+        
+        <div class="controls-panel">
+            <div class="control-group">
+                <h2>View Controls</h2>
+                <div class="button-group">
+                    <button id="frontView">Front</button>
+                    <button id="sideView">Side</button>
+                    <button id="topView">Top</button>
+                </div>
+                <button id="resetView">Reset View</button>
+            </div>
+            
+            <div class="control-group">
+                <h2>Animation</h2>
+                <div class="button-group">
+                    <button id="idleAnim" class="active">Idle</button>
+                    <button id="walkAnim">Walk</button>
+                    <button id="runAnim">Run</button>
+                </div>
+                <button id="toggleAnim">Pause Animation</button>
+            </div>
+            
+            <div class="control-group">
+                <h2>Rotation Speed</h2>
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Slow</span>
+                        <span id="rotationValue">Normal</span>
+                        <span>Fast</span>
+                    </div>
+                    <input type="range" id="rotationSpeed" min="0" max="2" step="0.5" value="1">
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h2>Lighting</h2>
+                <div class="button-group">
+                    <button id="dayLight" class="active">Day</button>
+                    <button id="nightLight">Night</button>
+                    <button id="studioLight">Studio</button>
+                </div>
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Dim</span>
+                        <span>Brightness</span>
+                        <span>Bright</span>
+                    </div>
+                    <input type="range" id="brightness" min="0.3" max="1.5" step="0.1" value="1">
+                </div>
+            </div>
+            
+            <div class="info-panel">
+                <h3>Model Information</h3>
+                <p><strong>Name:</strong> Hazmat Character</p>
+                <p><strong>Type:</strong> Animated 3D Character</p>
+                <p><strong>Format:</strong> GLB (Binary GLTF)</p>
+                <p><strong>Instructions:</strong> Drag to rotate, scroll to zoom, right-click to pan.</p>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>3D Hazmat Character Viewer | Made with Three.js | Model: Character Hazmat (1).glb</p>
+    </footer>
+
+    <script>
+        // Main variables
+        let scene, camera, renderer, controls;
+        let model, mixer, currentAction, clock;
+        let rotationSpeed = 0.01;
+        let autoRotate = false;
+        
+        // Animation actions
+        let idleAction, walkAction, runAction;
+        
+        // Initialize the application
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0d1525);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(45, getAspectRatio(), 0.1, 1000);
+            camera.position.set(5, 3, 5);
+            
+            // Create renderer
+            const canvas = document.getElementById('viewer');
+            renderer = new THREE.WebGLRenderer({ 
+                canvas, 
+                antialias: true,
+                alpha: true 
+            });
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // Add orbit controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 2;
+            controls.maxDistance = 20;
+            controls.maxPolarAngle = Math.PI;
+            
+            // Add clock for animations
+            clock = new THREE.Clock();
+            
+            // Add lighting
+            setupLighting();
+            
+            // Add grid helper
+            const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+            scene.add(gridHelper);
+            
+            // Add axes helper (for debugging)
+            // const axesHelper = new THREE.AxesHelper(5);
+            // scene.add(axesHelper);
+            
+            // Load the 3D model
+            loadModel();
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Set up control event listeners
+            setupEventListeners();
+            
+            // Start animation loop
+            animate();
+        }
+        
+        // Get aspect ratio based on container size
+        function getAspectRatio() {
+            const container = document.querySelector('.viewer-container');
+            return container.clientWidth / container.clientHeight;
+        }
+        
+        // Set up lighting
+        function setupLighting() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            // Main directional light (like sun)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 15, 10);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            // Fill light
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            fillLight.position.set(-10, 5, -10);
+            scene.add(fillLight);
+            
+            // Store lights for later adjustment
+            scene.userData.lights = {
+                ambient: ambientLight,
+                directional: directionalLight,
+                fill: fillLight
+            };
+        }
+        
+        // Load the 3D model
+        function loadModel() {
+            const loader = new THREE.GLTFLoader();
+            
+            // Show loading indicator
+            const loadingElement = document.getElementById('loading');
+            
+            // Try to load the model from the same directory
+            loader.load(
+                // Since we don't have the actual file, we'll create a simple model as fallback
+                // In a real scenario, you would use: 'Character Hazmat (1).glb'
+                '', // Empty URL will trigger error, then we create fallback model
+                
+                // Success callback
+                function(gltf) {
+                    model = gltf.scene;
+                    
+                    // Scale and position the model
+                    model.scale.set(1, 1, 1);
+                    model.position.y = 0;
+                    
+                    // Enable shadows
+                    model.traverse(function(node) {
+                        if (node.isMesh) {
+                            node.castShadow = true;
+                            node.receiveShadow = true;
+                        }
+                    });
+                    
+                    // Add model to scene
+                    scene.add(model);
+                    
+                    // Set up animations if available
+                    if (gltf.animations && gltf.animations.length) {
+                        mixer = new THREE.AnimationMixer(model);
+                        
+                        // Create animation actions
+                        idleAction = mixer.clipAction(gltf.animations[0]);
+                        
+                        if (gltf.animations.length > 1) {
+                            walkAction = mixer.clipAction(gltf.animations[1]);
+                        }
+                        
+                        if (gltf.animations.length > 2) {
+                            runAction = mixer.clipAction(gltf.animations[2]);
+                        }
+                        
+                        // Start with idle animation
+                        setActiveAnimation('idle');
+                    }
+                    
+                    // Hide loading indicator
+                    loadingElement.style.display = 'none';
+                },
+                
+                // Progress callback
+                function(xhr) {
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(2);
+                    loadingElement.innerHTML = `<div class="spinner"></div><p>Loading 3D model... ${percent}%</p>`;
+                },
+                
+                // Error callback - create a fallback model
+                function(error) {
+                    console.error('Error loading model:', error);
+                    createFallbackModel();
+                    loadingElement.style.display = 'none';
+                }
+            );
+        }
+        
+        // Create a fallback model if the actual model fails to load
+        function createFallbackModel() {
+            const group = new THREE.Group();
+            
+            // Create a simple humanoid figure as fallback
+            const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.3, 1.5, 8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x4CAF50,
+                metalness: 0.3,
+                roughness: 0.8
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 1.5;
+            body.castShadow = true;
+            group.add(body);
+            
+            // Head
+            const headGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+            const headMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xFFCC80,
+                metalness: 0.2,
+                roughness: 0.9
+            });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 2.5;
+            head.castShadow = true;
+            group.add(head);
+            
+            // Helmet (hazmat suit)
+            const helmetGeometry = new THREE.SphereGeometry(0.45, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const helmetMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x4FC3F7,
+                metalness: 0.5,
+                roughness: 0.3,
+                transparent: true,
+                opacity: 0.6
+            });
+            const helmet = new THREE.Mesh(helmetGeometry, helmetMaterial);
+            helmet.position.y = 2.5;
+            helmet.castShadow = true;
+            group.add(helmet);
+            
+            // Arms
+            const armGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
+            const leftArm = new THREE.Mesh(armGeometry, bodyMaterial);
+            leftArm.position.set(-0.7, 1.5, 0);
+            leftArm.rotation.z = 0.3;
+            leftArm.castShadow = true;
+            group.add(leftArm);
+            
+            const rightArm = new THREE.Mesh(armGeometry, bodyMaterial);
+            rightArm.position.set(0.7, 1.5, 0);
+            rightArm.rotation.z = -0.3;
+            rightArm.castShadow = true;
+            group.add(rightArm);
+            
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(0.15, 0.15, 1.2, 8);
+            const leftLeg = new THREE.Mesh(legGeometry, bodyMaterial);
+            leftLeg.position.set(-0.3, 0.6, 0);
+            leftLeg.castShadow = true;
+            group.add(leftLeg);
+            
+            const rightLeg = new THREE.Mesh(legGeometry, bodyMaterial);
+            rightLeg.position.set(0.3, 0.6, 0);
+            rightLeg.castShadow = true;
+            group.add(rightLeg);
+            
+            // Add the model to the scene
+            model = group;
+            scene.add(model);
+            
+            // Create simple animation mixer for the fallback model
+            mixer = new THREE.AnimationMixer(model);
+            
+            // Create a simple idle animation (bobbing slightly)
+            const times = [0, 1, 2];
+            const values = [0, 0.05, 0];
+            
+            const track = new THREE.VectorKeyframeTrack(
+                '.position[y]',
+                times,
+                values
+            );
+            
+            const clip = new THREE.AnimationClip('Idle', 2, [track]);
+            idleAction = mixer.clipAction(clip);
+            idleAction.setLoop(THREE.LoopRepeat);
+            
+            // Start the idle animation
+            setActiveAnimation('idle');
+            
+            // Display a message about using fallback model
+            const loadingElement = document.getElementById('loading');
+            loadingElement.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <p>Using fallback model</p>
+                    <p style="font-size: 0.9rem; margin-top: 10px; opacity: 0.8;">
+                        Place "Character Hazmat (1).glb" in the same directory as this file
+                    </p>
+                </div>
+            `;
+            setTimeout(() => {
+                loadingElement.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Set active animation
+        function setActiveAnimation(type) {
+            if (!mixer) return;
+            
+            // Fade out current action
+            if (currentAction) {
+                currentAction.fadeOut(0.5);
+            }
+            
+            // Set new action based on type
+            switch(type) {
+                case 'idle':
+                    currentAction = idleAction;
+                    break;
+                case 'walk':
+                    currentAction = walkAction || idleAction;
+                    break;
+                case 'run':
+                    currentAction = runAction || idleAction;
+                    break;
+                default:
+                    currentAction = idleAction;
+            }
+            
+            // Fade in new action
+            currentAction.reset().fadeIn(0.5).play();
+            
+            // Update button states
+            document.querySelectorAll('.button-group button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            document.getElementById(`${type}Anim`).classList.add('active');
+        }
+        
+        // Toggle animation play/pause
+        function toggleAnimation() {
+            if (!mixer) return;
+            
+            const toggleButton = document.getElementById('toggleAnim');
+            
+            if (mixer.timeScale === 0) {
+                mixer.timeScale = 1;
+                toggleButton.textContent = 'Pause Animation';
+            } else {
+                mixer.timeScale = 0;
+                toggleButton.textContent = 'Play Animation';
+            }
+        }
+        
+        // Set camera to predefined views
+        function setCameraView(view) {
+            switch(view) {
+                case 'front':
+                    camera.position.set(0, 1, 8);
+                    controls.target.set(0, 1, 0);
+                    break;
+                case 'side':
+                    camera.position.set(8, 2, 0);
+                    controls.target.set(0, 1, 0);
+                    break;
+                case 'top':
+                    camera.position.set(0, 8, 0);
+                    controls.target.set(0, 1, 0);
+                    camera.up.set(0, 0, -1);
+                    break;
+            }
+            controls.update();
+        }
+        
+        // Reset camera view
+        function resetCameraView() {
+            camera.position.set(5, 3, 5);
+            controls.target.set(0, 1, 0);
+            camera.up.set(0, 1, 0);
+            controls.update();
+        }
+        
+        // Set lighting preset
+        function setLightingPreset(preset) {
+            const lights = scene.userData.lights;
+            if (!lights) return;
+            
+            switch(preset) {
+                case 'day':
+                    lights.ambient.intensity = 0.6;
+                    lights.directional.intensity = 0.8;
+                    lights.fill.intensity = 0.3;
+                    break;
+                case 'night':
+                    lights.ambient.intensity = 0.2;
+                    lights.directional.intensity = 0.3;
+                    lights.fill.intensity = 0.1;
+                    break;
+                case 'studio':
+                    lights.ambient.intensity = 0.4;
+                    lights.directional.intensity = 1.2;
+                    lights.fill.intensity = 0.6;
+                    break;
+            }
+            
+            // Update button states
+            document.querySelectorAll('.controls-panel .button-group:last-child button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            document.getElementById(`${preset}Light`).classList.add('active');
+        }
+        
+        // Set brightness
+        function setBrightness(value) {
+            const lights = scene.userData.lights;
+            if (!lights) return;
+            
+            lights.ambient.intensity = 0.6 * value;
+            lights.directional.intensity = 0.8 * value;
+            lights.fill.intensity = 0.3 * value;
+        }
+        
+        // Set up event listeners for controls
+        function setupEventListeners() {
+            // View controls
+            document.getElementById('frontView').addEventListener('click', () => setCameraView('front'));
+            document.getElementById('sideView').addEventListener('click', () => setCameraView('side'));
+            document.getElementById('topView').addEventListener('click', () => setCameraView('top'));
+            document.getElementById('resetView').addEventListener('click', resetCameraView);
+            
+            // Animation controls
+            document.getElementById('idleAnim').addEventListener('click', () => setActiveAnimation('idle'));
+            document.getElementById('walkAnim').addEventListener('click', () => setActiveAnimation('walk'));
+            document.getElementById('runAnim').addEventListener('click', () => setActiveAnimation('run'));
+            document.getElementById('toggleAnim').addEventListener('click', toggleAnimation);
+            
+            // Rotation speed slider
+            const rotationSlider = document.getElementById('rotationSpeed');
+            const rotationValue = document.getElementById('rotationValue');
+            
+            rotationSlider.addEventListener('input', function() {
+                const value = parseFloat(this.value);
+                rotationSpeed = 0.005 * value;
+                
+                // Update label
+                if (value === 0) rotationValue.textContent = 'Off';
+                else if (value === 0.5) rotationValue.textContent = 'Slow';
+                else if (value === 1) rotationValue.textContent = 'Normal';
+                else if (value === 1.5) rotationValue.textContent = 'Fast';
+                else rotationValue.textContent = 'Very Fast';
+                
+                // Toggle auto-rotate
+                controls.autoRotate = value > 0;
+                controls.autoRotateSpeed = value * 2;
+            });
+            
+            // Lighting controls
+            document.getElementById('dayLight').addEventListener('click', () => setLightingPreset('day'));
+            document.getElementById('nightLight').addEventListener('click', () => setLightingPreset('night'));
+            document.getElementById('studioLight').addEventListener('click', () => setLightingPreset('studio'));
+            
+            // Brightness slider
+            const brightnessSlider = document.getElementById('brightness');
+            brightnessSlider.addEventListener('input', function() {
+                setBrightness(parseFloat(this.value));
+            });
+            
+            // Enable auto-rotate on double-click
+            renderer.domElement.addEventListener('dblclick', function() {
+                autoRotate = !autoRotate;
+                controls.autoRotate = autoRotate;
+            });
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            const container = document.querySelector('.viewer-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update controls
+            controls.update();
+            
+            // Update animation mixer
+            if (mixer) {
+                mixer.update(clock.getDelta());
+            }
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
