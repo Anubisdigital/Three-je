@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Anubis Combat: Infinite</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+
+        /* Health Bars */
+        .ui-bars {
+            position: absolute; top: 20px; width: 100%;
+            display: flex; justify-content: space-around; z-index: 10;
+        }
+        .bar-container { width: 40%; background: #333; border: 2px solid #fff; height: 25px; position: relative; }
+        .hp-fill { height: 100%; transition: width 0.3s; }
+        #player-hp { background: #00ff64; width: 100%; }
+        #enemy-hp { background: #ff0044; width: 0%; }
+        .label { position: absolute; top: -18px; color: #fff; font-size: 12px; }
+
+        #canvas-container { position: absolute; top: 0; width: 100%; height: 100%; }
+
+        .controls {
+            position: absolute; bottom: 20px; width: 100%;
+            display: flex; justify-content: center; gap: 10px; z-index: 10;
+        }
+        button {
+            background: rgba(0, 255, 100, 0.1); border: 2px solid #00ff64;
+            color: #00ff64; padding: 15px; border-radius: 8px; font-weight: bold;
+        }
+        button:disabled { border-color: #555; color: #555; }
+    </style>
+</head>
+<body>
+
+    <div class="ui-bars">
+        <div class="bar-container">
+            <div class="label">PLAYER (HERO)</div>
+            <div id="player-hp" class="hp-fill"></div>
+        </div>
+        <div class="bar-container">
+            <div class="label">TARGET (MECH)</div>
+            <div id="enemy-hp" class="hp-fill"></div>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div class="controls">
+        <button onpointerdown="isRunning = true" onpointerup="isRunning = false">RUN_INFINITE</button>
+        <button id="spawn-btn" onclick="spawnEnemy()">SPAWN_ENEMY</button>
+        <button id="punch-btn" onclick="attackEnemy()" disabled>PUNCH_ATTACK</button>
+    </div>
+
+    <script>
+        let scene, camera, renderer, player, enemy, mixer, enemyMixer, clock, grid;
+        let playerActions = {}, enemyActions = {};
+        let isRunning = false;
+        let playerLife = 200, enemyLife = 100;
+        let enemyActive = false;
+
+        function init() {
+            scene = new THREE.Scene();
+            clock = new THREE.Clock();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 12);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1));
+            
+            // Infinite Grid Science: We move the texture/position of this grid
+            grid = new THREE.GridHelper(200, 40, 0x00ff64, 0x222222);
+            scene.add(grid);
+
+            const loader = new THREE.GLTFLoader();
+            loader.load('Character Animated.glb', (gltf) => {
+                player = gltf.scene;
+                scene.add(player);
+                mixer = new THREE.AnimationMixer(player);
+                gltf.animations.forEach(clip => playerActions[clip.name] = mixer.clipAction(clip));
+                playAction(playerActions, 'Idle');
+            });
+
+            animate();
+        }
+
+        function spawnEnemy() {
+            if (enemyActive) return;
+            const loader = new THREE.GLTFLoader();
+            loader.load('Character Animated.glb', (gltf) => {
+                enemy = gltf.scene;
+                enemy.position.z = -5; // Spawn in front
+                enemy.rotation.y = Math.PI; // Face the player
+                
+                // Color the enemy red
+                enemy.traverse(n => { if(n.isMesh) n.material = n.material.clone(); if(n.material) n.material.color.set(0xff5555); });
+                
+                scene.add(enemy);
+                enemyMixer = new THREE.AnimationMixer(enemy);
+                gltf.animations.forEach(clip => enemyActions[clip.name] = enemyMixer.clipAction(clip));
+                
+                enemyLife = 100;
+                updateUI();
+                enemyActive = true;
+                document.getElementById('punch-btn').disabled = false;
+                document.getElementById('spawn-btn').disabled = true;
+                playAction(enemyActions, 'Attacking_Idle');
+            });
+        }
+
+        function playAction(dict, name) {
+            const clip = Object.keys(dict).find(k => k.toLowerCase().includes(name.toLowerCase()));
+            if (dict[clip]) {
+                dict[clip].reset().fadeIn(0.2).play();
+                if(['Punch', 'Dagger'].some(s => clip.includes(s))) {
+                    dict[clip].setLoop(THREE.LoopOnce);
+                }
+            }
+        }
+
+        function attackEnemy() {
+            if (!enemyActive) return;
+            playAction(playerActions, 'Punch');
+            
+            // Damage Logic
+            enemyLife -= 20;
+            if(enemyLife <= 0) die(enemy, enemyActions, 'enemy');
+            else {
+                // Enemy counter-attacks
+                setTimeout(() => {
+                    playAction(enemyActions, 'Punch');
+                    playerLife -= 10;
+                    updateUI();
+                    if(playerLife <= 0) die(player, playerActions, 'player');
+                }, 500);
+            }
+            updateUI();
+        }
+
+        function die(target, dict, type) {
+            playAction(dict, 'Death');
+            if(type === 'enemy') {
+                enemyActive = false;
+                setTimeout(() => { scene.remove(enemy); document.getElementById('spawn-btn').disabled = false; document.getElementById('punch-btn').disabled = true; }, 2000);
+            } else {
+                alert("GAME OVER - YOU DIED");
+                location.reload();
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('player-hp').style.width = (playerLife / 2) + "%";
+            document.getElementById('enemy-hp').style.width = enemyLife + "%";
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta);
+            if (enemyMixer) enemyMixer.update(delta);
+
+            if (isRunning) {
+                // The Science of Infinity: Move the floor, not the player!
+                grid.position.z += 0.2;
+                if (grid.position.z > 5) grid.position.z = 0; // Reset loop
+                playAction(playerActions, 'Run');
+            } else if (!enemyActive) {
+                playAction(playerActions, 'Idle');
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
