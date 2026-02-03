@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Anubis Game Studio - Debugger</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: monospace; }
+        #canvas-container { position: absolute; top: 0; width: 100%; height: 100%; }
+        
+        /* Debug Console on Screen */
+        #debug-log {
+            position: absolute; top: 10px; left: 10px; 
+            background: rgba(0,0,0,0.8); color: #00ff64;
+            padding: 10px; border: 1px solid #00ff64;
+            font-size: 10px; max-height: 150px; overflow-y: auto; z-index: 20;
+        }
+
+        .controls {
+            position: absolute; bottom: 20px; width: 100%;
+            display: flex; justify-content: center; gap: 10px; z-index: 10;
+        }
+        button {
+            background: #222; border: 1px solid #00ff64; color: #00ff64;
+            padding: 12px; border-radius: 5px; font-size: 10px;
+        }
+        button:active { background: #00ff64; color: #000; }
+    </style>
+</head>
+<body>
+
+    <div id="debug-log">SCANNING ANIMATIONS...</div>
+    <div id="canvas-container"></div>
+
+    <div class="controls">
+        <button onpointerdown="move('walk')" onpointerup="stop()">WALK</button>
+        <button onpointerdown="move('run')" onpointerup="stop()">RUN</button>
+        <button onclick="playAction('jump')">JUMP</button>
+        <button onclick="playAction('fight')">FIGHT</button>
+        <button onclick="playAction('dance')">DANCE</button>
+    </div>
+
+    <script>
+        let scene, camera, renderer, character, mixer, clock;
+        let actions = {};
+        let currentAction, moveSpeed = 0;
+
+        function init() {
+            scene = new THREE.Scene();
+            clock = new THREE.Clock();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 4, 10);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1));
+            scene.add(new THREE.GridHelper(50, 25, 0x00ff64, 0x222222));
+
+            const loader = new THREE.GLTFLoader();
+            loader.load('Character Animated.glb', (gltf) => {
+                character = gltf.scene;
+                scene.add(character);
+                
+                mixer = new THREE.AnimationMixer(character);
+                let logHTML = "<b>FOUND CLIPS:</b><br>";
+
+                // THE FIX: Mapping all animations found in your file
+                gltf.animations.forEach((clip) => {
+                    const name = clip.name.toLowerCase();
+                    actions[name] = mixer.clipAction(clip);
+                    logHTML += "- " + clip.name + "<br>";
+                });
+
+                document.getElementById('debug-log').innerHTML = logHTML;
+
+                // Play first clip as default
+                if(gltf.animations.length > 0) playAction(gltf.animations[0].name);
+
+            });
+
+            animate();
+        }
+
+        // SMART SELECTOR: Looks for a keyword in the animation list
+        function playAction(keyword) {
+            const actualName = Object.keys(actions).find(name => name.includes(keyword.toLowerCase()));
+            
+            if (actions[actualName]) {
+                if (currentAction) currentAction.fadeOut(0.2);
+                currentAction = actions[actualName];
+                currentAction.reset().fadeIn(0.2).play();
+            } else {
+                console.warn("No animation found for: " + keyword);
+            }
+        }
+
+        function move(type) {
+            moveSpeed = (type === 'run') ? 0.15 : 0.05;
+            playAction(type);
+        }
+
+        function stop() {
+            moveSpeed = 0;
+            playAction('idle') || playAction('wait');
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta);
+            if (character && moveSpeed > 0) {
+                character.translateZ(moveSpeed);
+                camera.position.z = character.position.z + 10;
+                camera.lookAt(character.position);
+            }
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
